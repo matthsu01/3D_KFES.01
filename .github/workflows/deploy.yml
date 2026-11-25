@@ -1,0 +1,72 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel superseded deployments on the same branch, keep in-progress deploy safe
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Type-check TypeScript
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Prepare GitHub Pages static files
+        run: |
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+
+      - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
